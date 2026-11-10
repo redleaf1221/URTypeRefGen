@@ -37,6 +37,8 @@ internal sealed class TypeRecord {
     public List<MemberInfoRec> Fields = new();
     public List<MemberInfoRec> Properties = new();
     public List<MemberInfoRec> Methods = new();
+    /// <summary>Public instance constructors; emitted as New(...) helpers.</summary>
+    public List<MemberInfoRec> Constructors = new();
     public List<(string Name, string Value)> EnumValues = new();
     public string LookupKey => DisplayName;
 }

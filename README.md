@@ -71,6 +71,10 @@ struct Draw {
 - **字段 / 属性 / 方法**：只导出能安全 marshal 的成员。
 - **静态成员**：`StaticGetField` / `InvokeStatic`。
 - **`Find()` / `FindAll()`**：仅对继承自 `UnityEngine.Object` 的类型生成。
+- **`New(...)`**：每个 public 构造一个，内部是 `Object::New(type)` 分配 + `CallExact(".ctor", 参数类型名)`。
+  `UnityEngine.Object` 的派生类**不生成**——它们必须走 `Instantiate()` / `AddComponent()`，
+  裸分配只会得到一个没有原生对象的托管空壳。参数类型无法映射（数组、`List<T>`、自定义结构体）
+  的构造跳过并写进 report。
 - **枚举**：`enum class`，值来自元数据；跨命名空间的枚举扁平化成 `Ns_Type`。
 - **自检块**：`#if defined(URTYPEGEN_SELF_CHECK)` 里实例化每个访问器。单独编译一个
   包含该头文件的 TU 并定义这个宏，就能证明整个头文件可编译，而不是等用到才炸。

@@ -248,6 +248,48 @@ internal sealed class HeaderEmitter {
             }
         }
 
+        if (_o.Methods && t.Constructors.Count > 0 && !isUnityObject) {
+            // UnityEngine.Object subclasses are left out on purpose: allocating them
+            // with il2cpp_object_new gives a managed shell without a native object,
+            // so those have to be created with Instantiate() or AddComponent().
+            foreach (var ctor in t.Constructors) {
+                var parameters = new List<string>();
+                var ok = true;
+                foreach (var (paramType, paramName) in ctor.Params) {
+                    var mapped = _map.Map(paramType);
+                    if (mapped is null) {
+                        ok = false;
+                        break;
+                    }
+                    parameters.Add($"{(mapped == "std::string" ? "std::string_view" : mapped)} {TypeMapper.SafeIdentifier(paramName)}");
+                }
+                if (!ok) {
+                    skipped.Add($"constructor ({string.Join(", ", ctor.Params.Select(p => TypeMapper.ShortType(p.Type)))})");
+                    continue;
+                }
+                var member = UniqueMember(usedNames, "New");
+                var argumentNames = string.Join(", ", ctor.Params.Select(p => TypeMapper.SafeIdentifier(p.Name)));
+                var argumentTypes = "{" + string.Join(", ", ctor.Params.Select(p => "\"" + Escape(p.Type.RuntimeName) + "\"")) + "}";
+                sb.AppendLine();
+                sb.AppendLine($"    // constructor: ({string.Join(", ", ctor.Params.Select(p => TypeMapper.ShortType(p.Type)))})");
+                sb.AppendLine($"    static {wrapper} {member}({string.Join(", ", parameters)}) {{");
+                sb.AppendLine($"        Object o = Object::New({refName});");
+                if (ctor.Params.Count == 0)
+                    sb.AppendLine("        o.Call<void>(\".ctor\");");
+                else
+                    sb.AppendLine($"        o.CallExact<void>(\".ctor\", {argumentTypes}, {argumentNames});");
+                sb.AppendLine($"        return {wrapper}{{o}};");
+                sb.AppendLine("    }");
+                emitted++;
+
+                var sampleArgs = string.Join(", ", ctor.Params.Select(p => {
+                    var mapped = _map.Map(p.Type) ?? "void *";
+                    return (mapped == "std::string" ? "std::string_view" : mapped) + "{}";
+                }));
+                _selfCheckCalls.Add($"(void){wrapper}::{member}({sampleArgs});");
+            }
+        }
+
         if (isUnityObject && _o.FindHelpers) {
             sb.AppendLine();
             sb.AppendLine("    // convenience lookups (UnityEngine.Object only)");

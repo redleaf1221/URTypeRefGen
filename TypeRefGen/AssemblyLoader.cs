@@ -160,8 +160,13 @@ internal static class AssemblyLoader {
         foreach (var methodHandle in definition.GetMethods()) {
             var method = reader.GetMethodDefinition(methodHandle);
             var attributes = method.Attributes;
+            var methodName = reader.GetString(method.Name);
+            if (methodName == ".ctor") {
+                ReadConstructor(reader, methodHandle, record);
+                continue;
+            }
             if ((attributes & MethodAttributes.SpecialName) != 0)
-                continue; // accessors and operators
+                continue; // accessors, operators and the static constructor
             if ((attributes & MethodAttributes.MemberAccessMask) != MethodAttributes.Public)
                 continue;
             if ((attributes & MethodAttributes.Abstract) != 0)
@@ -170,9 +175,6 @@ internal static class AssemblyLoader {
                 continue; // URKit's Call cannot supply generic arguments
             if (options.MaxMembers > 0 && record.Methods.Count >= options.MaxMembers)
                 break;
-            var methodName = reader.GetString(method.Name);
-            if (methodName is ".ctor" or ".cctor")
-                continue;
             MethodSignature<CsType> signature;
             try {
                 signature = method.DecodeSignature(CsTypeProvider.Instance, null);
@@ -192,6 +194,36 @@ internal static class AssemblyLoader {
                 member.Params.Add((signature.ParameterTypes[i], "arg" + i));
             record.Methods.Add(member);
         }
+    }
+
+    private static void ReadConstructor(MetadataReader reader, MethodDefinitionHandle handle, TypeRecord record) {
+        var method = reader.GetMethodDefinition(handle);
+        var attributes = method.Attributes;
+        if ((attributes & MethodAttributes.MemberAccessMask) != MethodAttributes.Public)
+            return;
+        if ((attributes & MethodAttributes.Static) != 0)
+            return; // .cctor
+        if ((attributes & MethodAttributes.Abstract) != 0)
+            return;
+        if (method.GetGenericParameters().Count > 0)
+            return;
+        MethodSignature<CsType> signature;
+        try {
+            signature = method.DecodeSignature(CsTypeProvider.Instance, null);
+        } catch {
+            return;
+        }
+        if (signature.GenericParameterCount > 0)
+            return;
+        var member = new MemberInfoRec {
+            Name = ".ctor",
+            Type = signature.ReturnType,
+            IsPublic = true,
+            Kind = MemberKind.Method,
+        };
+        for (var i = 0; i < signature.ParameterTypes.Length; i++)
+            member.Params.Add((signature.ParameterTypes[i], "arg" + i));
+        record.Constructors.Add(member);
     }
 
     private static void ReadEnum(AssemblyUnit unit, TypeDefinition definition, TypeRecord record) {
